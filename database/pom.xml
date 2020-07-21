@@ -483,6 +483,41 @@
         <jboss.datasource.filename>postgresql-xa-ds.xml</jboss.datasource.filename>
       </properties>
     </profile>
+    <profile>
+      <id>cockroachdb</id>
+      <properties>
+        <database.type>postgres</database.type>
+        <database.driver>org.postgresql.Driver</database.driver>
+        <database.datasource.class>org.postgresql.ds.PGSimpleDataSource</database.datasource.class>
+        <jboss.datasource.filename>postgresql-ds.xml</jboss.datasource.filename>
+        <hibernate.dialect>org.hibernate.dialect.PostgreSQLDialect</hibernate.dialect>
+      </properties>
+
+      <dependencies>
+        <dependency>
+          <groupId>org.postgresql</groupId>
+          <artifactId>postgresql</artifactId>
+          <scope>test</scope>
+        </dependency>
+      </dependencies>
+      <build>
+        <pluginManagement>
+          <plugins>
+            <plugin>
+              <groupId>org.codehaus.mojo</groupId>
+              <artifactId>sql-maven-plugin</artifactId>
+              <dependencies>
+                <dependency>
+                  <groupId>org.postgresql</groupId>
+                  <artifactId>postgresql</artifactId>
+                  <version>${version.postgresql}</version>
+                </dependency>
+              </dependencies>
+            </plugin>
+          </plugins>
+        </pluginManagement>
+      </build>
+    </profile>
 
     <profile>
       <id>sqlserver</id>
