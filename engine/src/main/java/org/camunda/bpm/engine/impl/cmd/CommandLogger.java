@@ -302,4 +302,10 @@ public class CommandLogger extends ProcessEngineLogger {
       "Propagation of escalation {} failed. ",
       escalationCode), cause);
   }
+
+  public void crdbTransactionRetryAttempt(Throwable cause) {
+    logDebug("045",
+      "A CockroachDB transaction retry attempt has been made. Reason: {}",
+      cause.getMessage());
+  }
 }

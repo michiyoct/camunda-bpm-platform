@@ -28,9 +28,11 @@ import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.impl.ProcessEngineLogger;
 import org.camunda.bpm.engine.impl.cfg.jta.JtaTransactionContextFactory;
 import org.camunda.bpm.engine.impl.cfg.standalone.StandaloneTransactionContextFactory;
+import org.camunda.bpm.engine.impl.db.sql.DbSqlSessionFactory;
 import org.camunda.bpm.engine.impl.interceptor.CommandContextFactory;
 import org.camunda.bpm.engine.impl.interceptor.CommandContextInterceptor;
 import org.camunda.bpm.engine.impl.interceptor.CommandInterceptor;
+import org.camunda.bpm.engine.impl.interceptor.CrdbTransactionRetryInterceptor;
 import org.camunda.bpm.engine.impl.interceptor.JtaTransactionInterceptor;
 import org.camunda.bpm.engine.impl.interceptor.LogInterceptor;
 import org.camunda.bpm.engine.impl.interceptor.ProcessApplicationContextInterceptor;
@@ -67,7 +69,13 @@ public class JtaProcessEngineConfiguration extends ProcessEngineConfigurationImp
     defaultCommandInterceptorsTxRequired.add(new LogInterceptor());
     defaultCommandInterceptorsTxRequired.add(new ProcessApplicationContextInterceptor(this));
     defaultCommandInterceptorsTxRequired.add(new JtaTransactionInterceptor(transactionManager, false));
+
+    if (DbSqlSessionFactory.CRDB.equals(databaseType)) {
+      defaultCommandInterceptorsTxRequired.add(getCrdbRetryInterceptor());
+    }
+
     defaultCommandInterceptorsTxRequired.add(new CommandContextInterceptor(commandContextFactory, this));
+
     return defaultCommandInterceptorsTxRequired;
   }
 
@@ -77,7 +85,13 @@ public class JtaProcessEngineConfiguration extends ProcessEngineConfigurationImp
     defaultCommandInterceptorsTxRequiresNew.add(new LogInterceptor());
     defaultCommandInterceptorsTxRequiresNew.add(new ProcessApplicationContextInterceptor(this));
     defaultCommandInterceptorsTxRequiresNew.add(new JtaTransactionInterceptor(transactionManager, true));
+
+    if (DbSqlSessionFactory.CRDB.equals(databaseType)) {
+      defaultCommandInterceptorsTxRequiresNew.add(getCrdbRetryInterceptor());
+    }
+
     defaultCommandInterceptorsTxRequiresNew.add(new CommandContextInterceptor(commandContextFactory, this, true));
+
     return defaultCommandInterceptorsTxRequiresNew;
   }
 
