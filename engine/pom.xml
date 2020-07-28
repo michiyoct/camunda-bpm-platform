@@ -650,12 +650,9 @@
               <failIfNoTests>false</failIfNoTests>
               <trimStackTrace>false</trimStackTrace>
               <redirectTestOutputToFile>true</redirectTestOutputToFile>
-              <excludes combine.children="append">
-                <exclude>**/CompetingMessageCorrelationTest.java</exclude>
-                <exclude>**/DbDeadlockTest.java</exclude>
-                <exclude>**/CompetingHistoricVariableInstancePartitioningTest.java</exclude>
-                <exclude>**/CompetingHistoricByteArrayPartitioningTest.java</exclude>
-              </excludes>
+<!--              <excludes combine.children="append">-->
+<!--                <exclude>**/*Test.java</exclude>-->
+<!--              </excludes>-->
             </configuration>
           </plugin>
         </plugins>
