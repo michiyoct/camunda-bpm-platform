@@ -71,6 +71,7 @@ import org.camunda.bpm.engine.impl.db.entitymanager.operation.DbOperation;
 import org.camunda.bpm.engine.impl.db.entitymanager.operation.DbOperation.State;
 import org.camunda.bpm.engine.impl.db.entitymanager.operation.DbOperationManager;
 import org.camunda.bpm.engine.impl.db.entitymanager.operation.DbOperationType;
+import org.camunda.bpm.engine.impl.db.sql.DbSqlSession;
 import org.camunda.bpm.engine.impl.identity.db.DbGroupQueryImpl;
 import org.camunda.bpm.engine.impl.identity.db.DbUserQueryImpl;
 import org.camunda.bpm.engine.impl.interceptor.Session;
@@ -178,8 +179,19 @@ public class DbEntityManager implements Session, EntityLoadListener {
     if(firstResult == -1 ||  maxResults==-1) {
       return Collections.EMPTY_LIST;
     }
-    List loadedObjects = persistenceSession.selectList(statement, parameter);
-    return filterLoadedObjects(loadedObjects);
+    try {
+
+      List loadedObjects = persistenceSession.selectList(statement, parameter);
+      return filterLoadedObjects(loadedObjects);
+    } catch (Exception e) {
+
+      if (DbSqlSession.isCrdbConcurrencyConflict(e)) {
+        // on CRDB, selects might fail with an OLE and the transaction must be retried.
+        throw LOG.crdbTransactionRetryExceptionOnSelect(e);
+      }
+      // if it's not a CRDB TransactionRetryError, simply rethrow the exception
+      throw e;
+    }
   }
 
   public Object selectOne(String statement, Object parameter) {

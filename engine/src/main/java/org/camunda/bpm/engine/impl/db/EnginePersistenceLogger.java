@@ -811,11 +811,28 @@ public class EnginePersistenceLogger extends ProcessEngineLogger {
     ));
   }
 
-  public void fatalFailureOperationIgnored(DbOperation operation) {
-    logError(
+  public CrdbTransactionRetryException crdbTransactionRetryExceptionOnSelect(Throwable cause) {
+    return new CrdbTransactionRetryException(exceptionMessage(
       "103",
-      "An OptimisticLockingListener attempted to ignore a fatal failure of: {}. " +
-        "If encountered, please report this failure to the Camunda development team.",
+      "Execution of SELECT statement failed. The transaction needs to be retried."),
+      cause
+    );
+  }
+
+  public CrdbTransactionRetryException crdbTransactionRetryExceptionOnCommit(Throwable cause) {
+    return new CrdbTransactionRetryException(exceptionMessage(
+        "104",
+        "Could not commit transaction. The transaction needs to be retried."),
+        cause
+    );
+  }
+
+  public void crdbFailureIgnored(DbOperation operation) {
+    logDebug(
+      "105",
+      "An OptimisticLockingListener attempted to ignore a failure of: {}. "
+      + "Since CockroachDB aborted the transaction, ignoring the failure "
+      + "is not possible and an exception is thrown instead.",
       operation
     );
   }
