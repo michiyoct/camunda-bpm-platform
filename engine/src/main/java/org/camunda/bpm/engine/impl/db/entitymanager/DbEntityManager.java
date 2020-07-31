@@ -363,6 +363,9 @@ public class DbEntityManager implements Session, EntityLoadListener {
           // accordingly, this method will be left as well in this case
           handleConcurrentModification(failedOperation);
         }
+        else if (failureState == State.FAILED_CONCURRENT_MODIFICATION_CRDB) {
+          handleConcurrentModificationCrdb(failedOperation);
+        }
         else if (failureState == State.FAILED_ERROR) {
           throw LOG.flushDbOperationException(allOperations, failedOperation, failedOperation.getFailure());
         } else {
@@ -400,6 +403,37 @@ public class DbEntityManager implements Session, EntityLoadListener {
    * @throws OptimisticLockingException if there is no handler for the failure
    */
   protected void handleConcurrentModification(DbOperation dbOperation) {
+    OptimisticLockingResult handlingResult = invokeOptimisticLockingListeners(dbOperation);
+
+    if (OptimisticLockingResult.THROW.equals(handlingResult)
+        && canIgnoreHistoryModificationFailure(dbOperation)) {
+        handlingResult = OptimisticLockingResult.IGNORE;
+    }
+
+    switch (handlingResult) {
+      case IGNORE:
+        break;
+      case THROW:
+      default:
+        throw LOG.concurrentUpdateDbEntityException(dbOperation);
+    }
+  }
+  
+  protected void handleConcurrentModificationCrdb(DbOperation dbOperation) {
+    OptimisticLockingResult handlingResult = invokeOptimisticLockingListeners(dbOperation);
+    
+    if (OptimisticLockingResult.IGNORE.equals(handlingResult)) {
+      LOG.crdbFailureIgnored(dbOperation);
+    }
+    
+    // CRDB concurrent modification exceptions always lead to the transaction
+    // being aborted, so we must always throw an exception.
+    
+    // TODO: hand in root cause
+    throw LOG.crdbTransactionRetryException(dbOperation);
+  }
+
+  private OptimisticLockingResult invokeOptimisticLockingListeners(DbOperation dbOperation) {
     OptimisticLockingResult handlingResult = OptimisticLockingResult.THROW;
 
     if(optimisticLockingListeners != null) {
@@ -410,27 +444,9 @@ public class DbEntityManager implements Session, EntityLoadListener {
         }
       }
     }
-    
-    if (OptimisticLockingResult.IGNORE.equals(handlingResult) && dbOperation.isFatalFailure()) {
-      LOG.fatalFailureOperationIgnored(dbOperation);
-      handlingResult = OptimisticLockingResult.THROW;
-    }
-
-    if (OptimisticLockingResult.THROW.equals(handlingResult)
-        && canIgnoreHistoryModificationFailure(dbOperation)) {
-        handlingResult = OptimisticLockingResult.IGNORE;
-    }
-
-    switch (handlingResult) {
-      case RETRY:
-        throw LOG.crdbTransactionRetryException(dbOperation);
-      case IGNORE:
-        break;
-      case THROW:
-      default:
-        throw LOG.concurrentUpdateDbEntityException(dbOperation);
-    }
+    return handlingResult;
   }
+  
 
   /**
    * Determines if a failed database operation (OptimisticLockingException)
@@ -442,8 +458,7 @@ public class DbEntityManager implements Session, EntityLoadListener {
   protected boolean canIgnoreHistoryModificationFailure(DbOperation dbOperation) {
     DbEntity dbEntity = ((DbEntityOperation) dbOperation).getEntity();
     return 
-        !dbOperation.isFatalFailure()
-        && Context.getProcessEngineConfiguration().isSkipHistoryOptimisticLockingExceptions()
+        Context.getProcessEngineConfiguration().isSkipHistoryOptimisticLockingExceptions()
         && (dbEntity instanceof HistoricEntity || isHistoricByteArray(dbEntity));
   }
 

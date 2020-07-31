@@ -807,8 +807,8 @@ public class EnginePersistenceLogger extends ProcessEngineLogger {
         "102",
         "Execution of '{}' failed. Entity was updated by another transaction concurrently, " +
             "and the transaction needs to be retried",
-        operation
-    ));
+        operation),
+        operation.getFailure());
   }
 
   public CrdbTransactionRetryException crdbTransactionRetryExceptionOnSelect(Throwable cause) {
