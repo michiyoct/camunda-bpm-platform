@@ -91,6 +91,11 @@ public class FetchExternalTasksCmd implements Command<List<LockedExternalTask>> 
 
     return result;
   }
+  
+  @Override
+  public boolean isRetryable() {
+    return true;
+  }
 
   protected void filterOnOptimisticLockingFailure(CommandContext commandContext, final List<LockedExternalTask> tasks) {
     commandContext.getDbEntityManager().registerOptimisticLockingListener(new OptimisticLockingListener() {

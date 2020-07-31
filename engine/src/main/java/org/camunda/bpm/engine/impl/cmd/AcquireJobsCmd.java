@@ -97,6 +97,11 @@ public class AcquireJobsCmd implements Command<AcquiredJobs>, OptimisticLockingL
 
     return acquiredJobs;
   }
+  
+  @Override
+  public boolean isRetryable() {
+    return true;
+  }
 
   protected void lockJob(AcquirableJobEntity job) {
     String lockOwner = jobExecutor.getLockOwner();
