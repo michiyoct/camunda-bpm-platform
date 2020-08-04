@@ -16,36 +16,37 @@
  */
 package org.camunda.bpm.engine.impl.telemetry.dto;
 
-import com.google.gson.annotations.SerializedName;
+import static org.camunda.bpm.engine.impl.util.ParseUtil.parseServerVendor;
 
-public class Internals {
+public class ApplicationServer {
 
-  public static final String SERIALIZED_APPLICATION_SERVER = "application-server";
+  protected String vendor;
+  protected String version;
 
-  protected Database database;
-  @SerializedName(value = SERIALIZED_APPLICATION_SERVER)
-  protected ApplicationServer applicationServer;
-
-  public Internals(Database database, ApplicationServer server) {
-    super();
-    this.database = database;
-    this.applicationServer = server;
+  public ApplicationServer(String vendor, String version) {
+    this.vendor = vendor;
+    this.version = version;
+  }
+  
+  public ApplicationServer(String version) {
+    this.vendor = parseServerVendor(version);
+    this.version = version;
   }
 
-  public Database getDatabase() {
-    return database;
+  public String getVendor() {
+    return vendor;
   }
 
-  public void setDatabase(Database database) {
-    this.database = database;
+  public void setVendor(String vendor) {
+    this.vendor = vendor;
   }
 
-  public ApplicationServer getAppServer() {
-    return applicationServer;
+  public String getVersion() {
+    return version;
   }
 
-  public void setAppServer(ApplicationServer appServer) {
-    this.applicationServer = appServer;
+  public void setVersion(String version) {
+    this.version = version;
   }
 
 }

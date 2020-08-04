@@ -40,7 +40,6 @@ import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
-
 import javax.naming.InitialContext;
 import javax.sql.DataSource;
 
@@ -335,6 +334,7 @@ import org.camunda.bpm.engine.impl.scripting.engine.ScriptingEngines;
 import org.camunda.bpm.engine.impl.scripting.engine.VariableScopeResolverFactory;
 import org.camunda.bpm.engine.impl.scripting.env.ScriptEnvResolver;
 import org.camunda.bpm.engine.impl.scripting.env.ScriptingEnvironment;
+import org.camunda.bpm.engine.impl.telemetry.dto.ApplicationServer;
 import org.camunda.bpm.engine.impl.telemetry.dto.Data;
 import org.camunda.bpm.engine.impl.telemetry.dto.Database;
 import org.camunda.bpm.engine.impl.telemetry.dto.Internals;
@@ -2591,16 +2591,22 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
   }
 
   protected void initTelemetryData() {
-      Database database = new Database(databaseVendor, databaseVersion);
-      Internals internals = new Internals(database);
+    Database database = new Database(databaseVendor, databaseVersion);
 
-      ProcessEngineDetails engineInfo = ParseUtil
-          .parseProcessEngineVersion(ProcessEngineConfigurationImpl.class.getPackage().getImplementationVersion(), true);
+    ApplicationServer server = null;
+    if (applicationServerInfo != null) {
+      server = new ApplicationServer(applicationServerInfo);
+    }
 
-      Product product = new Product(PRODUCT_NAME, engineInfo.getVersion(), engineInfo.getEdition(), internals);
+    Internals internals = new Internals(database, server);
 
-      // installationId=null, the id will be fetched later from database
-      telemetryData = new Data(null, product);
+    ProcessEngineDetails engineInfo = ParseUtil
+        .parseProcessEngineVersion(ProcessEngineConfigurationImpl.class.getPackage().getImplementationVersion(), true);
+
+    Product product = new Product(PRODUCT_NAME, engineInfo.getVersion(), engineInfo.getEdition(), internals);
+
+    // installationId=null, the id will be fetched later from database
+    telemetryData = new Data(null, product);
   }
 
   // getters and setters //////////////////////////////////////////////////////

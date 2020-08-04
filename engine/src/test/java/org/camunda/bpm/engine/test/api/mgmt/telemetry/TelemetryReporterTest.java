@@ -42,6 +42,7 @@ import org.apache.http.impl.client.HttpClientBuilder;
 import org.camunda.bpm.engine.ManagementService;
 import org.camunda.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl;
 import org.camunda.bpm.engine.impl.cfg.StandaloneInMemProcessEngineConfiguration;
+import org.camunda.bpm.engine.impl.telemetry.dto.ApplicationServer;
 import org.camunda.bpm.engine.impl.telemetry.dto.Data;
 import org.camunda.bpm.engine.impl.telemetry.dto.Database;
 import org.camunda.bpm.engine.impl.telemetry.dto.Internals;
@@ -199,8 +200,8 @@ public class TelemetryReporterTest {
 
   protected Data createDataToSend() {
     Database database = new Database("mySpecialDb", "v.1.2.3");
-    Internals internals = new Internals(database);
-    Product product = new Product("Runtime", "7.14", "special", internals);
+    Internals internals = new Internals(database, new ApplicationServer("Apache Tomcat/10.0.1"));
+    Product product = new Product("Runtime", "7.14.0", "special", internals);
     Data data = new Data("f5b19e2e-b49a-11ea-b3de-0242ac130004", product);
     return data;
   }

@@ -28,8 +28,10 @@ import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.camunda.bpm.engine.impl.ProcessEngineLogger;
+import org.camunda.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl;
 import org.camunda.bpm.engine.impl.interceptor.CommandExecutor;
 import org.camunda.bpm.engine.impl.telemetry.TelemetryLogger;
+import org.camunda.bpm.engine.impl.telemetry.dto.ApplicationServer;
 import org.camunda.bpm.engine.impl.telemetry.dto.Data;
 import org.camunda.bpm.engine.impl.util.JsonUtil;
 
@@ -65,9 +67,14 @@ public class TelemetrySendingTask extends TimerTask {
   protected void sendData() {
     commandExecutor.execute(commandContext -> {
       // send data only if telemetry is enabled
-      if (commandContext.getProcessEngineConfiguration().getManagementService().isTelemetryEnabled()) {
+      ProcessEngineConfigurationImpl processEngineConfiguration = commandContext.getProcessEngineConfiguration();
+      if (processEngineConfiguration.getManagementService().isTelemetryEnabled()) {
         try {
           HttpPost request = new HttpPost(telemetryEndpoint);
+          if (data.getProduct().getInternals().getAppServer() == null &&
+              processEngineConfiguration.getApplicationServerInfo() != null) {
+            data.setApplicationServer(new ApplicationServer(processEngineConfiguration.getApplicationServerInfo()));
+          }
           String telemetryData = JsonUtil.asString(data);
           StringEntity requestBody = new StringEntity(telemetryData, StandardCharsets.UTF_8);
           request.setHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON);

@@ -43,4 +43,7 @@ public class Data {
     this.product = product;
   }
 
+  public void setApplicationServer(ApplicationServer applicationServer) {
+    this.product.internals.applicationServer = applicationServer;
+  }
 }
