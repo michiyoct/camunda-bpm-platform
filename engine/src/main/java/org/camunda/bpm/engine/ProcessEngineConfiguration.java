@@ -416,6 +416,9 @@ public abstract class ProcessEngineConfiguration {
   /** An unique installation identifier */
   protected String installationId;
 
+
+  protected String applicationServerInfo;
+
   /** use one of the static createXxxx methods instead */
   protected ProcessEngineConfiguration() {
   }
@@ -1087,4 +1090,12 @@ public abstract class ProcessEngineConfiguration {
     return this;
   }
 
+  public String getApplicationServerInfo() {
+    return applicationServerInfo;
+  }
+
+  public ProcessEngineConfiguration setApplicationServerInfo(String applicationServerInfo) {
+    this.applicationServerInfo = applicationServerInfo;
+    return this;
+  }
 }
