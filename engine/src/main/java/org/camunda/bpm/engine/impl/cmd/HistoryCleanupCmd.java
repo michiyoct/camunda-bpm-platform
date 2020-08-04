@@ -222,4 +222,8 @@ public class HistoryCleanupCmd implements Command<Job> {
         .isHistoryCleanupEnabled();
   }
 
+  @Override
+  public boolean isRetryable() {
+    return true;
+  }
 }

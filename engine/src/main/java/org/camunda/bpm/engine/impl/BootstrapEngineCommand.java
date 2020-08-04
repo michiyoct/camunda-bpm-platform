@@ -203,4 +203,9 @@ public class BootstrapEngineCommand implements ProcessEngineBootstrapCommand {
       processEngineConfiguration.getTelemetryReporter().start();
     }
   }
+
+  @Override
+  public boolean isRetryable() {
+    return true;
+  }
 }

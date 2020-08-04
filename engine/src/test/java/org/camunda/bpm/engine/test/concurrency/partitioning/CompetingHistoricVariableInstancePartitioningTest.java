@@ -33,7 +33,7 @@ import org.junit.Test;
 
 public class CompetingHistoricVariableInstancePartitioningTest extends AbstractPartitioningTest {
 
-  final protected String VARIABLE_NAME = "aVariableName";
+  protected final String VARIABLE_NAME = "aVariableName";
   final protected String VARIABLE_VALUE = "aVariableValue";
   final protected String ANOTHER_VARIABLE_VALUE = "anotherVariableValue";
 
