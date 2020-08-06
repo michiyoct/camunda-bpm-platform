@@ -28,6 +28,8 @@ import org.camunda.bpm.engine.HistoryService;
 import org.camunda.bpm.engine.ManagementService;
 import org.camunda.bpm.engine.OptimisticLockingException;
 import org.camunda.bpm.engine.ProcessEngine;
+import org.camunda.bpm.engine.ProcessEngineBootstrapCommand;
+import org.camunda.bpm.engine.ProcessEngineConfiguration;
 import org.camunda.bpm.engine.RepositoryService;
 import org.camunda.bpm.engine.RuntimeService;
 import org.camunda.bpm.engine.history.HistoricVariableInstance;
@@ -39,9 +41,11 @@ import org.camunda.bpm.engine.impl.cmd.HistoryCleanupCmd;
 import org.camunda.bpm.engine.impl.cmd.SetJobDefinitionPriorityCmd;
 import org.camunda.bpm.engine.impl.cmd.SuspendJobCmd;
 import org.camunda.bpm.engine.impl.cmd.SuspendJobDefinitionCmd;
+import org.camunda.bpm.engine.impl.context.Context;
 import org.camunda.bpm.engine.impl.db.sql.DbSqlSessionFactory;
 import org.camunda.bpm.engine.impl.interceptor.Command;
 import org.camunda.bpm.engine.impl.interceptor.CommandContext;
+import org.camunda.bpm.engine.impl.interceptor.CommandInvocationContext;
 import org.camunda.bpm.engine.impl.jobexecutor.AcquiredJobs;
 import org.camunda.bpm.engine.impl.jobexecutor.ExecuteJobHelper;
 import org.camunda.bpm.engine.impl.jobexecutor.JobExecutor;
@@ -55,6 +59,7 @@ import org.camunda.bpm.engine.management.JobDefinition;
 import org.camunda.bpm.engine.runtime.Job;
 import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.camunda.bpm.engine.test.concurrency.ConcurrencyTestHelper;
+import org.camunda.bpm.engine.test.concurrency.ConcurrentProcessEngineJobExecutorHistoryCleanupJobTest;
 import org.camunda.bpm.engine.test.concurrency.ControllableThread;
 import org.camunda.bpm.engine.test.concurrency.ControlledCommand;
 import org.camunda.bpm.engine.test.jobexecutor.ControllableJobExecutor;
@@ -80,16 +85,7 @@ import org.slf4j.Logger;
 public class CockroachSpecificBehaviorTest extends ConcurrencyTestHelper {
 
   protected static final Logger LOG = ProcessEngineLogger.TEST_LOGGER.getLogger();
-
-  protected final String VARIABLE_NAME = "aVariableName";
-  protected final String VARIABLE_VALUE = "aVariableValue";
-  protected final String ANOTHER_VARIABLE_VALUE = "anotherVariableValue";
   protected static final int COMMAND_RETRIES = 3;
-  protected final BpmnModelInstance PROCESS_WITH_USERTASK = Bpmn.createExecutableProcess("process")
-      .startEvent()
-        .userTask()
-      .endEvent()
-      .done();
   protected static final BpmnModelInstance SIMPLE_ASYNC_PROCESS = Bpmn.createExecutableProcess("simpleAsyncProcess")
       .startEvent()
       .serviceTask()
@@ -143,61 +139,32 @@ public class CockroachSpecificBehaviorTest extends ConcurrencyTestHelper {
     });
   }
 
+  @Ignore("WIP")
   @Test
-  public void shouldRetryTxOnHistoricOptimisticLockingException() {
+  public void shouldRetryTxToBootstrapConcurrentProcessEngine() throws InterruptedException {
     // given
-    String processInstanceId = deployAndStartProcess(PROCESS_WITH_USERTASK,
-      Variables.createVariables().putValue(VARIABLE_NAME, VARIABLE_VALUE)).getId();
+    ControllableProcessEngineBootstrap engineOne = new ControllableProcessEngineBootstrap("engine-one");
+    ThreadControl engineOneThread = executeControllableCommand(engineOne);
+    engineOneThread.waitForSync();
 
-    ThreadControl asyncThread = executeControllableCommand(new AsyncThread(processInstanceId));
-    asyncThread.reportInterrupts();
+    ControllableProcessEngineBootstrap engineTwo = new ControllableProcessEngineBootstrap("engine-two");
+    ThreadControl engineTwoThread = executeControllableCommand(engineTwo);
+    engineTwoThread.reportInterrupts();
+    engineTwoThread.waitForSync();
 
-    asyncThread.waitForSync();
-
-    processEngineConfiguration.getCommandExecutorTxRequired().execute((Command<Void>) commandContext -> {
-      HistoricVariableInstanceEntity historicVariableInstanceEntity =
-        (HistoricVariableInstanceEntity) historyService.createHistoricVariableInstanceQuery().singleResult();
-
-      commandContext.getDbEntityManager().delete(historicVariableInstanceEntity);
-
-      return null;
-    });
-
-    // assume
-    assertThat(historyService.createHistoricVariableInstanceQuery().singleResult()).isNull();
-
-    // when
-    asyncThread.makeContinue();
-    asyncThread.waitUntilDone(true);
+    engineOneThread.makeContinue(); // build process engine & execute bootstrap command
 
     // then
-    assertThat(runtimeService.createVariableInstanceQuery().singleResult().getName()).isEqualTo(VARIABLE_NAME);
-    assertThat(runtimeService.createVariableInstanceQuery().singleResult().getValue()).isEqualTo(ANOTHER_VARIABLE_VALUE);
-  }
+    engineTwoThread.makeContinue(); // build process engine & execute bootstrap command
+    Thread.sleep(3000);
 
-  @Test
-  public void shouldRetryTxToReconfigureHistoryCleanupJobsOnOle() {
-    // given
-    // create cleanup job
-    String jobId = historyService.cleanUpHistoryAsync(true).getId();
+    engineOneThread.waitUntilDone(true);  // flush changes to db
 
-    // make job fail
-    makeEverLivingJobFail(jobId);
+    engineTwoThread.waitUntilDone(true); // attempt to flush, fail & retry
 
-    ThreadControl engineOne = executeControllableCommand(new EngineOne());
-    ThreadControl engineTwo = executeControllableCommand(new EngineTwo());
-    engineTwo.reportInterrupts();
-
-    engineTwo.waitForSync(); // job is fetched
-
-    engineOne.makeContinue(); // reconfigure job & flush
-    engineOne.join();
-
-    // then
-    engineTwo.makeContinue(); // reconfigure job & flush
-    engineTwo.waitUntilDone(true);
-
-    assertThat(engineTwo.getException()).isNull();
+    assertThat(engineTwoThread.getException()).isNull();
+    assertThat(engineOne.getTries()).isOne();
+    assertThat(engineTwo.getTries()).isEqualTo(2);
   }
 
   @Ignore("TODO: adjust for retries")
@@ -349,40 +316,68 @@ public class CockroachSpecificBehaviorTest extends ConcurrencyTestHelper {
     assertTrue(secondHistoryCleanupJob.getDuedate().after(firstHistoryCleanupJob.getDuedate()));
   }
 
-  protected static class EngineOne extends ControllableCommand<Void> {
+  protected static class ControllableProcessEngineBootstrap extends ControllableCommand<Void> {
 
-    protected BootstrapEngineCommand bootstrapEngineCommand;
+    protected ProcessEngineBootstrapCommand bootstrapCommand;
+    protected int tries;
+    protected String engineName;
 
-    public EngineOne() {
-      this.bootstrapEngineCommand = new BootstrapEngineCommand();
+    public ControllableProcessEngineBootstrap(String engineName) {
+      this.tries = 0;
+      this.engineName = engineName;
     }
 
     public Void execute(CommandContext commandContext) {
-      bootstrapEngineCommand.execute(commandContext);
+
+      bootstrapCommand = new ControllableBootstrapEngineCommand(this.monitor, engineName);
+
+      ProcessEngineConfiguration processEngineConfiguration = ProcessEngineConfiguration
+        .createProcessEngineConfigurationFromResource("camunda.cfg.xml");
+
+
+      processEngineConfiguration.setProcessEngineBootstrapCommand(bootstrapCommand);
+      processEngineConfiguration.setProcessEngineName(engineName);
+      processEngineConfiguration.buildProcessEngine();
 
       return null;
     }
 
     @Override
     public boolean isRetryable() {
-      return bootstrapEngineCommand.isRetryable();
+      return true;
+    }
+
+    public int getTries() {
+      return ((ControllableBootstrapEngineCommand)bootstrapCommand).getTries();
     }
   }
 
-  protected class EngineTwo extends ControllableCommand<Void> {
+  protected static class ControllableBootstrapEngineCommand extends ControllableCommand<Void> implements ProcessEngineBootstrapCommand {
 
     protected BootstrapEngineCommand bootstrapEngineCommand;
+    protected int tries;
+    protected String engineName;
 
-    public EngineTwo() {
+    public ControllableBootstrapEngineCommand(ThreadControl monitor, String engineName) {
+      super(monitor);
       this.bootstrapEngineCommand = new BootstrapEngineCommand();
+      this.engineName = engineName;
+      this.tries = 0;
     }
 
+    @Override
     public Void execute(CommandContext commandContext) {
-      historyService.findHistoryCleanupJobs();
+
+      if ("engine-two".equals(engineName)) {
+        commandContext.getProcessEngineConfiguration().getHistoryService().findHistoryCleanupJobs();
+      }
 
       monitor.sync();
 
+      tries++;
       bootstrapEngineCommand.execute(commandContext);
+
+      monitor.sync();
 
       return null;
     }
@@ -390,6 +385,10 @@ public class CockroachSpecificBehaviorTest extends ConcurrencyTestHelper {
     @Override
     public boolean isRetryable() {
       return bootstrapEngineCommand.isRetryable();
+    }
+
+    public int getTries() {
+      return tries;
     }
   }
 
@@ -423,37 +422,6 @@ public class CockroachSpecificBehaviorTest extends ConcurrencyTestHelper {
 
     public int getRetries() {
       return retries;
-    }
-  }
-
-  public class AsyncThread extends ControllableCommand<Void> {
-
-    String processInstanceId;
-
-    AsyncThread(String processInstanceId) {
-      this.processInstanceId = processInstanceId;
-    }
-
-    public Void execute(CommandContext commandContext) {
-      HistoricVariableInstance historicVariableInstance = historyService.createHistoricVariableInstanceQuery()
-        .singleResult();
-
-      if (historicVariableInstance != null) {
-        historicVariableInstance.getId(); // cache
-      }
-
-      monitor.sync();
-
-      commandContext.getProcessEngineConfiguration()
-        .getRuntimeService()
-        .setVariable(processInstanceId, VARIABLE_NAME, ANOTHER_VARIABLE_VALUE);
-
-      return null;
-    }
-
-    @Override
-    public boolean isRetryable() {
-      return true;
     }
   }
 
@@ -619,11 +587,4 @@ public class CockroachSpecificBehaviorTest extends ConcurrencyTestHelper {
     });
   }
 
-  protected ProcessInstance deployAndStartProcess(BpmnModelInstance bpmnModelInstance, Map<String, Object> variablesMap) {
-    testRule.deploy(repositoryService.createDeployment()
-      .addModelInstance("process.bpmn", bpmnModelInstance));
-
-    String processDefinitionKey = bpmnModelInstance.getDefinitions().getRootElements().iterator().next().getId();
-    return runtimeService.startProcessInstanceByKey(processDefinitionKey, variablesMap);
-  }
 }

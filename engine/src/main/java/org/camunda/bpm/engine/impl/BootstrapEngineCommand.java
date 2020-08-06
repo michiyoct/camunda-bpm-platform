@@ -26,9 +26,12 @@ import org.camunda.bpm.engine.impl.db.EnginePersistenceLogger;
 import org.camunda.bpm.engine.impl.db.entitymanager.OptimisticLockingListener;
 import org.camunda.bpm.engine.impl.db.entitymanager.OptimisticLockingResult;
 import org.camunda.bpm.engine.impl.db.entitymanager.operation.DbOperation;
+import org.camunda.bpm.engine.impl.db.sql.DbSqlSessionFactory;
 import org.camunda.bpm.engine.impl.interceptor.CommandContext;
 import org.camunda.bpm.engine.impl.persistence.entity.EverLivingJobEntity;
 import org.camunda.bpm.engine.impl.persistence.entity.PropertyEntity;
+import org.camunda.bpm.engine.impl.persistence.entity.PropertyManager;
+import org.camunda.bpm.engine.impl.util.DatabaseUtil;
 
 /**
  * @author Nikola Koevski
@@ -105,7 +108,7 @@ public class BootstrapEngineCommand implements ProcessEngineBootstrapCommand {
 
       checkTelemetryLockExists(commandContext);
 
-      commandContext.getPropertyManager().acquireExclusiveLockForTelemetry();
+      acquireExclusiveTelemetryLock(commandContext);
       PropertyEntity databaseTelemetryProperty = databaseTelemetryConfiguration(commandContext);
 
       if (databaseTelemetryProperty == null) {
@@ -148,7 +151,7 @@ public class BootstrapEngineCommand implements ProcessEngineBootstrapCommand {
 
     if (databaseInstallationId == null || databaseInstallationId.isEmpty()) {
 
-      commandContext.getPropertyManager().acquireExclusiveLockForInstallationId();
+      acquireExclusiveInstallationIdLock(commandContext);
       databaseInstallationId = databaseInstallationId(commandContext);
 
       if (databaseInstallationId == null || databaseInstallationId.isEmpty()) {
@@ -201,6 +204,26 @@ public class BootstrapEngineCommand implements ProcessEngineBootstrapCommand {
         processEngineConfiguration.getTelemetryReporter() != null &&
         processEngineConfiguration.getTelemetryReporter().getHttpConnector() != null) {
       processEngineConfiguration.getTelemetryReporter().start();
+    }
+  }
+
+  protected void acquireExclusiveTelemetryLock(CommandContext commandContext) {
+    if (!DatabaseUtil.checkDatabaseType(DbSqlSessionFactory.CRDB)) {
+      PropertyManager propertyManager = commandContext.getPropertyManager();
+      //exclusive lock
+      propertyManager.acquireExclusiveLockForTelemetry();
+    } else {
+      LOG.debugDisabledTelemetryLock();
+    }
+  }
+
+  protected void acquireExclusiveInstallationIdLock(CommandContext commandContext) {
+    if (!DatabaseUtil.checkDatabaseType(DbSqlSessionFactory.CRDB)) {
+      PropertyManager propertyManager = commandContext.getPropertyManager();
+      //exclusive lock
+      propertyManager.acquireExclusiveLockForInstallationId();
+    } else {
+      LOG.debugDisabledInstallationIdLock();
     }
   }
 
