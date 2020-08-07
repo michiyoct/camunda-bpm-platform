@@ -6,15 +6,27 @@
 
   <parent>
     <groupId>org.camunda.bpm</groupId>
-    <artifactId>camunda-database-settings</artifactId>
-    <relativePath>../../database</relativePath>
+    <artifactId>camunda-core-internal-dependencies</artifactId>
+    <relativePath>../../internal-dependencies</relativePath>
     <version>7.14.0-SNAPSHOT</version>
   </parent>
-  
+
   <properties>
     <version.spring.framework>4.3.28.RELEASE</version.spring.framework>
   </properties>
-  
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework</groupId>
+        <artifactId>spring-framework-bom</artifactId>
+        <version>${version.spring.framework}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
   <dependencies>
     <!-- engine Spring artifact and tests -->
     <dependency>
