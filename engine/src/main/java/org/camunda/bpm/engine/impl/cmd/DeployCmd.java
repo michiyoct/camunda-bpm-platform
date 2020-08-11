@@ -189,7 +189,7 @@ public class DeployCmd implements Command<DeploymentWithDefinitions>, Serializab
 
   protected void acquireExclusiveLock(CommandContext commandContext) {
     if (commandContext.getProcessEngineConfiguration().isDeploymentLockUsed()
-        || DatabaseUtil.checkDatabaseType(DbSqlSessionFactory.CRDB)) {
+        && !DatabaseUtil.checkDatabaseType(DbSqlSessionFactory.CRDB)) {
       // Acquire global exclusive lock: this ensures that there can be only one
       // transaction in the cluster which is allowed to perform deployments.
       // This is important to ensure that duplicate filtering works correctly
@@ -639,5 +639,10 @@ public class DeployCmd implements Command<DeploymentWithDefinitions>, Serializab
 
       throw new NotFoundException(builder.toString());
     }
+  }
+
+  @Override
+  public boolean isRetryable() {
+    return true;
   }
 }

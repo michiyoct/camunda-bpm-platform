@@ -66,8 +66,6 @@ public class TransactionIsolationSerializableTest extends ConcurrencyTestCase {
    * Deadlocks may occur if readers are not properly isolated from writers.
    *
    */
-  
-  // TODO: ignore on CockroachDB and at a later point create dedicated concurrency test cases
   // for CockroachDB that reproduce the scenarios described in https://docs.google.com/document/d/1jf1hsFoLBL0xAkwasV2-S5uf0iGw93FITwMMLJVZjz0/edit 
   // and verify that our implementation can handle them
   @Test

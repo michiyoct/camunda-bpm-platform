@@ -184,8 +184,9 @@ public class JobExecutorMetricsTest extends AbstractMetricsTest {
       // on CRDB there are additional job failures due to a self-referencing foreign
       // key constraint on the ACT_RU_EXECUTION table which causes a TransactionRetryError
       assertTrue(jobsFailed >= 6);
-      // this leads to additional job acquisitions and retires
-      assertEquals(3 + jobsFailed, jobCandidatesForAcquisition);
+      // this leads to additional job acquisitions and retries
+      // 3 successful job executions + more than 6 job failures
+      assertTrue(jobCandidatesForAcquisition >= 9);
     }
   }
 

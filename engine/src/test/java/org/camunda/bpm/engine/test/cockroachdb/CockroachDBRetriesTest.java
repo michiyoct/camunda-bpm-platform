@@ -1,9 +1,8 @@
 package org.camunda.bpm.engine.test.cockroachdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.CoreMatchers.not;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
 import java.util.HashMap;
 import java.util.List;
@@ -11,24 +10,33 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.camunda.bpm.engine.CrdbTransactionRetryException;
-import org.camunda.bpm.engine.RepositoryService;
+import org.camunda.bpm.engine.ManagementService;
+import org.camunda.bpm.engine.ProcessEngine;
+import org.camunda.bpm.engine.ProcessEngineConfiguration;
+import org.camunda.bpm.engine.ProcessEngines;
 import org.camunda.bpm.engine.RuntimeService;
 import org.camunda.bpm.engine.externaltask.ExternalTask;
 import org.camunda.bpm.engine.externaltask.LockedExternalTask;
+import org.camunda.bpm.engine.impl.BootstrapEngineCommand;
 import org.camunda.bpm.engine.impl.ProcessEngineImpl;
-import org.camunda.bpm.engine.impl.cmd.DeployCmd;
+import org.camunda.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl;
 import org.camunda.bpm.engine.impl.cmd.FetchExternalTasksCmd;
+import org.camunda.bpm.engine.impl.cmd.SetJobDefinitionPriorityCmd;
+import org.camunda.bpm.engine.impl.cmd.SuspendJobDefinitionCmd;
 import org.camunda.bpm.engine.impl.db.sql.DbSqlSessionFactory;
 import org.camunda.bpm.engine.impl.externaltask.TopicFetchInstruction;
+import org.camunda.bpm.engine.impl.interceptor.Command;
 import org.camunda.bpm.engine.impl.interceptor.CommandContext;
-import org.camunda.bpm.engine.impl.repository.DeploymentBuilderImpl;
+import org.camunda.bpm.engine.impl.management.UpdateJobDefinitionSuspensionStateBuilderImpl;
+import org.camunda.bpm.engine.impl.persistence.entity.JobEntity;
 import org.camunda.bpm.engine.impl.test.RequiredDatabase;
-import org.camunda.bpm.engine.repository.DeploymentBuilder;
-import org.camunda.bpm.engine.repository.ProcessDefinition;
+import org.camunda.bpm.engine.management.JobDefinition;
+import org.camunda.bpm.engine.runtime.Job;
 import org.camunda.bpm.engine.test.Deployment;
 import org.camunda.bpm.engine.test.concurrency.CompetingExternalTaskFetchingTest;
 import org.camunda.bpm.engine.test.concurrency.CompetingJobAcquisitionTest;
 import org.camunda.bpm.engine.test.concurrency.ConcurrencyTestHelper;
+import org.camunda.bpm.engine.test.concurrency.ConcurrentJobExecutorTest;
 import org.camunda.bpm.engine.test.jobexecutor.ControllableJobExecutor;
 import org.camunda.bpm.engine.test.jobexecutor.RecordingAcquireJobsRunnable.RecordedWaitEvent;
 import org.camunda.bpm.engine.test.util.ProcessEngineBootstrapRule;
@@ -37,23 +45,24 @@ import org.camunda.bpm.engine.test.util.ProvidedProcessEngineRule;
 import org.camunda.bpm.model.bpmn.Bpmn;
 import org.camunda.bpm.model.bpmn.BpmnModelInstance;
 import org.junit.After;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.ClassRule;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.ExpectedException;
 import org.junit.rules.RuleChain;
 
-@Ignore
 @RequiredDatabase(includes = DbSqlSessionFactory.CRDB)
 public class CockroachDBRetriesTest extends ConcurrencyTestHelper {
 
-  protected static final int COMMAND_RETRIES = 3;
   protected static final int DEFAULT_NUM_JOBS_TO_ACQUIRE = 3;
-  protected final BpmnModelInstance PROCESS_WITH_USERTASK = Bpmn.createExecutableProcess("process")
+  protected static final int COMMAND_RETRIES = 3;
+  protected static final String PROCESS_ENGINE_NAME = "failingProcessEngine";
+  protected static final BpmnModelInstance SIMPLE_ASYNC_PROCESS = Bpmn.createExecutableProcess("simpleAsyncProcess")
       .startEvent()
-        .userTask()
+      .serviceTask()
+      .camundaExpression("${true}")
+      .camundaAsyncBefore()
       .endEvent()
       .done();
   
@@ -66,19 +75,24 @@ public class CockroachDBRetriesTest extends ConcurrencyTestHelper {
   @Rule
   public RuleChain ruleChain = RuleChain.outerRule(engineRule).around(testRule);
 
+  @Rule
+  public ExpectedException thrown = ExpectedException.none();
+
   protected ControllableJobExecutor jobExecutor1;
   protected ControllableJobExecutor jobExecutor2;
 
   protected ThreadControl acquisitionThread1;
   protected ThreadControl acquisitionThread2;
 
-  protected RepositoryService repositoryService;
-  
+  protected RuntimeService runtimeService;
+  protected ManagementService managementService;
+
   @Before
   public void setUp() throws Exception {
     processEngineConfiguration = engineRule.getProcessEngineConfiguration();
-    repositoryService = engineRule.getRepositoryService();
-    
+    runtimeService = engineRule.getRuntimeService();
+    managementService = engineRule.getManagementService();
+
     // two job executors with the default settings
     jobExecutor1 = (ControllableJobExecutor)
         processEngineConfiguration.getJobExecutor();
@@ -94,10 +108,7 @@ public class CockroachDBRetriesTest extends ConcurrencyTestHelper {
   public void tearDown() throws Exception {
     jobExecutor1.shutdown();
     jobExecutor2.shutdown();
-
-    for(org.camunda.bpm.engine.repository.Deployment deployment : repositoryService.createDeploymentQuery().list()) {
-      repositoryService.deleteDeployment(deployment.getId(), true);
-    }
+    closeDownProcessEngine();
   }
   
   /**
@@ -116,7 +127,6 @@ public class CockroachDBRetriesTest extends ConcurrencyTestHelper {
 
     jobExecutor1.start();
     jobExecutor2.start();
-
     // both acquisition threads wait before acquiring something
     acquisitionThread1.waitForSync();
     acquisitionThread2.waitForSync();
@@ -153,7 +163,6 @@ public class CockroachDBRetriesTest extends ConcurrencyTestHelper {
     // and the exception never bubbled up to the job executor (i.e. the retry was transparent)
     assertThat(acquisitionException).isNull(); 
   }
-  
   
   /**
    * See {@link CompetingExternalTaskFetchingTest#testCompetingExternalTaskFetching()}
@@ -200,52 +209,113 @@ public class CockroachDBRetriesTest extends ConcurrencyTestHelper {
     assertThat(thread2Tasks).hasSize(numExternalTasks - numTasksToFetch);
   }
 
-  // TODO: disable pessimistic deployment lock. See CAM-12232
+  /**
+   * See {@link ConcurrentJobExecutorTest#testCompletingUpdateJobDefinitionPriorityDuringExecution()}
+   * for the test case without retries.
+   */
   @Test
-  public void shouldRetryDeployCmd() throws InterruptedException {
+  @Deployment(resources = "org/camunda/bpm/engine/test/jobexecutor/simpleAsyncProcess.bpmn20.xml")
+  public void shouldRetryJobExecutionTxAfterJobPriorityOLE() {
     // given
-    DeploymentBuilder deploymentOne = createDeploymentBuilder();
-    DeploymentBuilder deploymentTwo = createDeploymentBuilder();
+    // several running process instances with an async continuation
+    int numJobs = DEFAULT_NUM_JOBS_TO_ACQUIRE + 1;
+    for (int i = 0; i < numJobs; i++) {
+      engineRule.getRuntimeService().startProcessInstanceByKey("simpleAsyncProcess");
+    }
+    // and a job definition
+    JobDefinition jobDefinition = managementService.createJobDefinitionQuery().singleResult();
 
-    // STEP 1: bring two threads to a point where they have
-    // 1) started a new transaction
-    // 2) are ready to deploy
-    ThreadControl thread1 = executeControllableCommand(new ControllableDeployCommand(deploymentOne));
-    thread1.waitForSync();
+    jobExecutor1.start();
+    acquisitionThread1.waitForSync();
+    ThreadControl jobPriorityThread = executeControllableCommand(new ControllableJobDefinitionPriorityCommand(jobDefinition.getId(), 42L, true));
+    jobPriorityThread.waitForSync();
 
-    ThreadControl thread2 = executeControllableCommand(new ControllableDeployCommand(deploymentTwo));
-    thread2.waitForSync();
+    // the acquisition thread acquires the jobs
+    acquisitionThread1.makeContinueAndWaitForSync();
 
-    // STEP 2: make Thread 1 proceed and wait until it has deployed but not yet committed
-    // -> will still hold the exclusive lock
-    thread1.makeContinue();
-    thread1.waitForSync();
+    // the job priority thread updates the job priority and flushes the change
+    jobPriorityThread.makeContinue();
+    jobPriorityThread.waitUntilDone(true);
 
-    // STEP 3: make Thread 2 continue
-    // -> it will attempt to acquire the exclusive lock and block on the lock
-    thread2.makeContinue();
+    // when
+    // the job acquisition thread attempts to flush the job locks it fails
+    acquisitionThread1.makeContinueAndWaitForSync();
 
-    // wait for 2 seconds (Thread 2 is blocked on the lock)
-    Thread.sleep(2000);
+    // thread2 immediately acquires again and commits
+    acquisitionThread1.makeContinueAndWaitForSync();
+    acquisitionThread1.makeContinueAndWaitForSync();
+    acquisitionThread1.ignoreFutureSyncs();
 
-    // STEP 4: allow Thread 1 to terminate
-    // -> Thread 1 will commit and release the lock
-    thread1.waitUntilDone();
+    // then
+    // the jobs have been executed and only one is remaining
+    Job currentJob = engineRule.getManagementService().createJobQuery().active().singleResult();
+    assertThat(currentJob).isNotNull();
+    // the job priority has changed
+    assertEquals(42, currentJob.getPriority());
+    // and thread2 has no reported failure
+    assertThat(acquisitionThread1.getException()).isNull();
+  }
 
-    // STEP 5: wait for Thread 2 to fail on flush and retry
-    thread2.waitForSync();
-    thread2.waitUntilDone(true);
+  @Test
+  @Deployment(resources = "org/camunda/bpm/engine/test/jobexecutor/simpleAsyncProcess.bpmn20.xml")
+  public void shouldRetryAcquisitionJobTxAfterJobSuspensionOLE() {
+    // given
+    String processDefinitionKey = "simpleAsyncProcess";
+    // a running process instance with an async continuation
+    runtimeService.startProcessInstanceByKey(processDefinitionKey);
+    // a waiting acquisition and a waiting suspension
+    jobExecutor1.start();
+    acquisitionThread1.reportInterrupts();
+    acquisitionThread1.waitForSync();
+    ThreadControl jobSuspensionThread = executeControllableCommand(new ControllableJobSuspensionCommand(processDefinitionKey));
+    jobSuspensionThread.reportInterrupts();
+    jobSuspensionThread.waitForSync();
 
-    // ensure that although both transactions were run concurrently, the process definitions have different versions
-    List<ProcessDefinition> processDefinitions = repositoryService
-      .createProcessDefinitionQuery()
-      .orderByProcessDefinitionVersion()
-      .asc()
-      .list();
+    // the acquisition thread acquires the jobs
+    acquisitionThread1.makeContinueAndWaitForSync();
 
-    Assert.assertThat(processDefinitions.size(), is(2));
-    Assert.assertThat(processDefinitions.get(0).getVersion(), is(1));
-    Assert.assertThat(processDefinitions.get(1).getVersion(), is(2));
+    // when the job suspension thread completes the suspension
+    jobSuspensionThread.makeContinue();
+    jobSuspensionThread.waitUntilDone(true);
+
+    // then
+    // the acquisition thread fails to flush the job locks
+    acquisitionThread1.makeContinueAndWaitForSync();
+
+    // the acquisition thread immediately acquires again and commits
+    acquisitionThread1.makeContinueAndWaitForSync();
+    acquisitionThread1.makeContinueAndWaitForSync();
+
+    // the suspension state doesn't fail at all
+    assertNull(jobSuspensionThread.getException());
+    // and the acquisition will not fail with optimistic locking since it was retried
+    assertNull(acquisitionThread1.getException());
+    // and no jobs were executed since they are suspended
+    long jobCount = managementService.createJobQuery().suspended().count();
+    assertThat(jobCount).isOne();
+  }
+
+  @Test
+  public void shouldRethrowBootstrapEngineOleWhenRetriesAreExhausted() {
+    // given
+    // a bootstrap command failing with a CrdbTransactionRetryException
+    FailingProcessEngineBootstrapCommand bootstrapCommand = new FailingProcessEngineBootstrapCommand();
+    ProcessEngineConfigurationImpl processEngineConfiguration = ((ProcessEngineConfigurationImpl)
+        ProcessEngineConfiguration
+            .createProcessEngineConfigurationFromResource("camunda.cfg.xml"))
+        .setCommandRetries(COMMAND_RETRIES)
+        .setProcessEngineName(PROCESS_ENGINE_NAME);
+    processEngineConfiguration.setProcessEngineBootstrapCommand(bootstrapCommand);
+
+    // then
+    // a CrdbTransactionRetryException is re-thrown to the caller
+    thrown.expect(CrdbTransactionRetryException.class);
+
+    // when
+    processEngineConfiguration.buildProcessEngine();
+
+    // since the Command retries were exausted
+    assertThat(bootstrapCommand.getTries()).isEqualTo(4);
   }
 
   @Test
@@ -267,61 +337,60 @@ public class CockroachDBRetriesTest extends ConcurrencyTestHelper {
     // and the command is only tried once
     assertThat(failingCommand.getTries()).isOne();
   }
-  
-  private static class ControlledFetchAndLockCommand extends ControllableCommand<List<LockedExternalTask>> {
 
-    private FetchExternalTasksCmd wrappedCmd;
-    
+  protected static class ControlledFetchAndLockCommand extends ControllableCommand<List<LockedExternalTask>> {
+
+    protected FetchExternalTasksCmd wrappedCmd;
+
     public ControlledFetchAndLockCommand(int numTasks, String workerId, String topic) {
-      Map<String, TopicFetchInstruction> instructions = new HashMap<String, TopicFetchInstruction>();
+      Map<String, TopicFetchInstruction> instructions = new HashMap<>();
 
       TopicFetchInstruction instruction = new TopicFetchInstruction(topic, 10000L);
       instructions.put(topic, instruction);
-      
+
       this.wrappedCmd = new FetchExternalTasksCmd(workerId, numTasks, instructions);
     }
-    
+
     @Override
     public List<LockedExternalTask> execute(CommandContext commandContext) {
       monitor.sync();
 
       List<LockedExternalTask> tasks = wrappedCmd.execute(commandContext);
-      
+
       monitor.sync();
-        
+
       return tasks;
     }
-    
+
     @Override
     public boolean isRetryable() {
       return wrappedCmd.isRetryable();
     }
-    
   }
 
-  protected static class ControllableDeployCommand extends ControllableCommand<Void> {
+  protected static class FailingProcessEngineBootstrapCommand  extends BootstrapEngineCommand {
 
-    protected final DeploymentBuilder deploymentBuilder;
-    protected DeployCmd deployCmd;
+    protected int tries;
 
-    public ControllableDeployCommand(DeploymentBuilder deploymentBuilder) {
-      this.deploymentBuilder = deploymentBuilder;
-      this.deployCmd = new DeployCmd((DeploymentBuilderImpl) deploymentBuilder);
+    public FailingProcessEngineBootstrapCommand() {
+      this.tries = 0;
     }
 
+    @Override
     public Void execute(CommandContext commandContext) {
-      monitor.sync();  // thread will block here until makeContinue() is called form main thread
 
-      deployCmd.execute(commandContext);
+      tries++;
+      throw new CrdbTransactionRetryException("The Process Engine Bootstrap has failed.");
 
-      monitor.sync();  // thread will block here until waitUntilDone() is called form main thread
+    }
 
-      return null;
+    public int getTries() {
+      return tries;
     }
 
     @Override
     public boolean isRetryable() {
-      return deployCmd.isRetryable();
+      return super.isRetryable();
     }
   }
 
@@ -348,9 +417,73 @@ public class CockroachDBRetriesTest extends ConcurrencyTestHelper {
     }
   }
 
-  protected DeploymentBuilder createDeploymentBuilder() {
-    return new DeploymentBuilderImpl(null)
-      .name("some-deployment-name")
-      .addModelInstance("foo.bpmn", PROCESS_WITH_USERTASK);
+  protected class ControllableJobDefinitionPriorityCommand extends ControllableCommand<Void> {
+
+    protected SetJobDefinitionPriorityCmd jobDefinitionPriorityCmd;
+
+    public ControllableJobDefinitionPriorityCommand(String jobDefinitionId, Long priority, boolean cascade) {
+      this.jobDefinitionPriorityCmd = new SetJobDefinitionPriorityCmd(jobDefinitionId, priority, cascade);
+    }
+
+    @Override
+    public Void execute(CommandContext commandContext) {
+
+      monitor.sync();
+
+      jobDefinitionPriorityCmd.execute(commandContext);
+
+      monitor.sync();
+
+      return null;
+    }
+  }
+
+  protected class ControllableJobSuspensionCommand extends ControllableCommand<Void> {
+
+    protected SuspendJobDefinitionCmd suspendJobDefinitionCmd;
+
+    public ControllableJobSuspensionCommand(String processDefinitionKey) {
+      UpdateJobDefinitionSuspensionStateBuilderImpl builder = new UpdateJobDefinitionSuspensionStateBuilderImpl()
+          .byProcessDefinitionKey(processDefinitionKey)
+          .includeJobs(true);
+
+      this.suspendJobDefinitionCmd = new SuspendJobDefinitionCmd(builder);
+    }
+
+    @Override
+    public Void execute(CommandContext commandContext) {
+
+      monitor.sync();
+
+      suspendJobDefinitionCmd.execute(commandContext);
+
+      monitor.sync();
+
+      return null;
+    }
+  }
+
+  protected void closeDownProcessEngine() {
+    final ProcessEngine otherProcessEngine = ProcessEngines.getProcessEngine(PROCESS_ENGINE_NAME);
+    if (otherProcessEngine != null) {
+
+      ((ProcessEngineConfigurationImpl)otherProcessEngine.getProcessEngineConfiguration())
+          .getCommandExecutorTxRequired()
+          .execute((Command<Void>) commandContext -> {
+
+            List<Job> jobs = otherProcessEngine.getManagementService().createJobQuery().list();
+            if (jobs.size() > 0) {
+              assertEquals(1, jobs.size());
+              String jobId = jobs.get(0).getId();
+              commandContext.getJobManager().deleteJob((JobEntity) jobs.get(0));
+              commandContext.getHistoricJobLogManager().deleteHistoricJobLogByJobId(jobId);
+            }
+
+            return null;
+          });
+
+      otherProcessEngine.close();
+      ProcessEngines.unregister(otherProcessEngine);
+    }
   }
 }

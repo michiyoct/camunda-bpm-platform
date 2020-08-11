@@ -702,7 +702,7 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
   protected boolean isDeploymentLockUsed = true;
 
   /**
-   * If true then several deployments will be processed strictly sequentally. When false they may be processed in parallel.
+   * If true then several deployments will be processed strictly sequentially. When false they may be processed in parallel.
    */
   protected boolean isDeploymentSynchronized = true;
 

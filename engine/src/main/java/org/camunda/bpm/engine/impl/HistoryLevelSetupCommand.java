@@ -122,4 +122,9 @@ public final class HistoryLevelSetupCommand implements Command<Void> {
       LOG.debugDisabledStartupLock();
     }
   }
+
+  @Override
+  public boolean isRetryable() {
+    return true;
+  }
 }

@@ -74,7 +74,6 @@ public class ConcurrentHistoryLevelTest extends ConcurrencyTestCase {
     thread2.waitUntilDone();
 
     assertNull(thread1.getException());
-    assertNull(thread1.getException());
     Throwable thread2Exception = thread2.getException();
     if (testRule.databaseSupportsIgnoredOLE()) {
       assertNull(thread2Exception);
