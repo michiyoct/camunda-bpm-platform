@@ -751,7 +751,7 @@ pipeline{
         stage('Spring Boot Starter: IT') {
           agent {
             kubernetes {
-              yaml getMavenAgent()
+              yaml getMavenAgent() + getChromeAgent()
             }
           }
           steps {
