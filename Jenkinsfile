@@ -64,6 +64,47 @@ pipeline{
         }
       }
     }
+    
+//        stage('camunda-commons-typed-values tests') {
+//          agent {
+//            kubernetes {
+//              yaml getMavenAgent()
+//            }
+//          }
+//          steps{
+//            container("maven"){
+//              // Run maven
+//              unstash "artifactStash"
+//              configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
+//                sh """
+//                  export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
+//                  cd typed-values && mvn -s \$MAVEN_SETTINGS_XML -B test
+//                """
+//              }
+//            }
+//          }
+//        }
+//        stage('DMN engine tests') {
+//          agent {
+//            kubernetes {
+//              yaml getMavenAgent()
+//            }
+//          }
+//          steps{
+//            container("maven"){
+//              // Run maven
+//              unstash "artifactStash"
+//              configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
+//                sh """
+//                  export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
+//                  cd engine-dmn && mvn -s \$MAVEN_SETTINGS_XML -B verify
+//                """
+//              }
+//            }
+//          }
+//        }
+    
+    
     stage("Model API tests"){
       agent {
         kubernetes {
