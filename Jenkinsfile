@@ -1,8 +1,8 @@
 #!/usr/bin/env groovy
 
-String getMavenAgent(Integer mavenCpuLimit = 3){
+String getMavenAgent(Integer mavenCpuLimit = 4){
   // assuming one core left for main maven thread
-  String mavenForkCount = mavenCpuLimit - 1;
+  String mavenForkCount = mavenCpuLimit;
   // assuming 2Gig for each core
   String mavenMemoryLimit = mavenCpuLimit * 2;
   """
