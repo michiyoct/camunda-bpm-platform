@@ -64,60 +64,23 @@ pipeline{
         }
       }
     }
-    stage("before engine") {
-      parallel {
-        stage("mid"){
-          agent {
-            kubernetes {
-              yaml getMavenAgent()
-            }
-          }
-          stages {
-            stage {
-              steps{
-                container("maven"){
-                  unstash "artifactStash"
-                }
-              }
-              failFast true
-              parallel {
-                stage('camunda-commons-typed-values tests') {
-                  steps{
-                    container("maven"){
-                      // Run maven
-                      configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
-                        sh """
-                          export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
-                          cd typed-values && mvn -s \$MAVEN_SETTINGS_XML -B test
-                        """
-                      }
-                    }
-                  }
-                }
-                stage('DMN engine tests') {
-                  steps{
-                    container("maven"){
-                      // Run maven
-                      configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
-                        sh """
-                          export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
-                          cd engine-dmn && mvn -s \$MAVEN_SETTINGS_XML -B verify
-                        """
-                      }
-                    }
-                  }
-                }
-              }
+    stage("Before"){
+      agent {
+        kubernetes {
+          yaml getMavenAgent()
+        }
+      }
+      stages {
+        stage('Unstash') {
+          steps{
+            container("maven"){
+              unstash "artifactStash"
             }
           }
         }
-        stage("Model API tests"){
-          agent {
-            kubernetes {
-              yaml getMavenAgent()
-            }
-          }
-          stages {
+        stage('to rename') {
+          failFast true
+          parallel {
             stage('XML model') {
               steps{
                 container("maven"){
@@ -132,46 +95,105 @@ pipeline{
                 }
               }
             }
-            stage('MN model') {
-              failFast true
-              parallel {
-                stage('BPMN model') {
-                  steps{
-                    container("maven"){
-                      // Run maven
-                      configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
-                        sh """
-                          export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
-                          cd model-api/bpmn-model && mvn -s \$MAVEN_SETTINGS_XML -B test
-                        """
-                      }
-                    }
+            stage('BPMN model') {
+              steps{
+                container("maven"){
+                  // Run maven
+                  configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
+                    sh """
+                      export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
+                      cd model-api/bpmn-model && mvn -s \$MAVEN_SETTINGS_XML -B test
+                    """
                   }
                 }
-                stage('DMN model') {
-                  steps{
-                    container("maven"){
-                      // Run maven
-                      configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
-                        sh """
-                          export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
-                          cd model-api/dmn-model && mvn -s \$MAVEN_SETTINGS_XML -B test
-                        """
-                      }
-                    }
+              }
+            }
+            stage('DMN model') {
+              steps{
+                container("maven"){
+                  // Run maven
+                  configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
+                    sh """
+                      export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
+                      cd model-api/dmn-model && mvn -s \$MAVEN_SETTINGS_XML -B test
+                    """
                   }
                 }
-                stage('CMMN model') {
-                  steps{
-                    container("maven"){
-                      // Run maven
-                      configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
-                        sh """
-                          export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
-                          cd model-api/cmmn-model && mvn -s \$MAVEN_SETTINGS_XML -B test
-                        """
-                      }
-                    }
+              }
+            }
+            stage('CMMN model') {
+              steps{
+                container("maven"){
+                  // Run maven
+                  configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
+                    sh """
+                      export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
+                      cd model-api/cmmn-model && mvn -s \$MAVEN_SETTINGS_XML -B test
+                    """
+                  }
+                }
+              }
+            }
+            stage('camunda-commons-typed-values tests') {
+              steps{
+                container("maven"){
+                  // Run maven
+                  configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
+                    sh """
+                      export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
+                      cd typed-values && mvn -s \$MAVEN_SETTINGS_XML -B test
+                    """
+                  }
+                }
+              }
+            }
+            stage('DMN engine tests') {
+              steps{
+                container("maven"){
+                  // Run maven
+                  configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
+                    sh """
+                      export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
+                      cd engine-dmn && mvn -s \$MAVEN_SETTINGS_XML -B verify
+                    """
+                  }
+                }
+              }
+            }
+            stage('sql-scripts') {
+              agent {
+                kubernetes {
+                  yaml getMavenAgent()
+                }
+              }
+              steps{
+                container("maven"){
+                  // Run maven
+                  unstash "artifactStash"
+                  configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
+                    //sh """
+                    //  errors=0
+                    //
+                    //  for create_script in engine/src/main/resources/org/camunda/bpm/engine/db/create/*.sql; do
+                    //      drop_script=${create_script//create/drop}
+                    //      created_indexes=$(grep -i '^\s*create \(unique \)\?index' $create_script | tr [A-Z] [a-z] | sed 's/^\s*create \(unique \)\?index \(\S\+\).*$/\2/' | sort)
+                    //      dropped_indexes=$(grep -i '^\s*drop index' $drop_script | tr [A-Z] [a-z] | sed 's/^\s*drop index \([^.]\+\.\)\?\([^ ;]\+\).*$/\2/' | sort)
+                    //      diff_indexes=$(diff <(echo \'$created_indexes\') <(echo \'$dropped_indexes\'))
+                    //      if [ $? -ne 0 ]; then
+                    //          echo 'Found index difference for:'
+                    //          echo $create_script
+                    //          echo $drop_script
+                    //          echo -e \'${diff_indexes}\n\'
+                    //          errors=$[errors + 1]
+                    //      fi
+                    //  done
+                    //  
+                    //  exit $errors
+                    //"""
+                    sh """
+                      export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
+                      cd distro/sql-script && mvn -s \$MAVEN_SETTINGS_XML -B install -Pcheck-sql,h2
+                    """
                   }
                 }
               }
