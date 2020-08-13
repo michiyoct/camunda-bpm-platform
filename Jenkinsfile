@@ -705,5 +705,48 @@ pipeline{
         }
       }
     }
+    stage("Distros"){
+      failFast true
+      parallel {
+        stage('Run: IT') {
+          agent {
+            kubernetes {
+              yaml getMavenAgent()
+            }
+          }
+          steps {
+            container("maven") {
+              // Run maven
+              unstash "artifactStash"
+              configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
+                sh """
+                  export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
+                  cd distro/run && mvn -s \$MAVEN_SETTINGS_XML test -Pintegration-test-camunda-run -B
+                """
+              }
+            }
+          }
+        }
+        stage('Run: IT') {
+          agent {
+            kubernetes {
+              yaml getMavenAgent()
+            }
+          }
+          steps {
+            container("maven") {
+              // Run maven
+              unstash "artifactStash"
+              configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
+                sh """
+                  export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
+                  cd spring-boot-starter && mvn -s \$MAVEN_SETTINGS_XML test -Pintegration-test-spring-boot-starter -B
+                """
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
