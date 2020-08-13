@@ -46,6 +46,10 @@ metadata:
   labels:
     agent: ci-cambpm-camunda-cloud-build
 spec:
+  ports:
+  - name:  http
+    port:  5432
+    targetPort: http
   nodeSelector:
     cloud.google.com/gke-nodepool: agents-n1-standard-32-netssd-preempt
   tolerations:
@@ -62,6 +66,12 @@ spec:
       value: ${mavenForkCount}
     - name: TZ
       value: Europe/Berlin
+    - name: POSTGRES_DB
+      value: process-engine
+    - name: POSTGRES_USER
+      value: camunda
+    - name: POSTGRES_PASSWORD
+      value: camunda
     resources:
       limits:
         cpu: ${mavenCpuLimit}
@@ -336,25 +346,44 @@ pipeline{
     stage('Engine UNIT & QA Tests') {
       failFast true
       parallel {
-//        stage('Engine UNIT tests') {
-//          agent {
-//            kubernetes {
-//              yaml getMavenAgent()
-//            }
-//          }
-//          steps{
-//            container("maven"){
-//              // Run maven
-//              unstash "artifactStash"
-//              configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
-//                sh """
-//                  export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
-//                  cd engine && mvn -s \$MAVEN_SETTINGS_XML -B -T\$LIMITS_CPU test -Pdatabase,h2-in-memory
-//                """
-//              }
-//            }
-//          }
-//        }
+        stage('Engine UNIT tests') {
+          agent {
+            kubernetes {
+              yaml getMavenAgent()
+            }
+          }
+          steps{
+            container("maven"){
+              // Run maven
+              unstash "artifactStash"
+              configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
+                sh """
+                  export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
+                  cd engine && mvn -s \$MAVEN_SETTINGS_XML -B -T\$LIMITS_CPU test -Pdatabase,h2-in-memory
+                """
+              }
+            }
+          }
+        }
+        stage('Engine UNIT tests - Postgres 9.6') {
+          agent {
+            kubernetes {
+              yaml getMavenAgent() + getPostgresAgent()
+            }
+          }
+          steps{
+            container("maven"){
+              // Run maven
+              unstash "artifactStash"
+              configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
+                sh """
+                  export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
+                  cd engine && mvn -s \$MAVEN_SETTINGS_XML -B -T\$LIMITS_CPU test -Pdatabase,postgresql
+                """
+              }
+            }
+          }
+        }
 //        stage("Engine UNIT: Authorizations Tests") {
 //          agent {
 //            kubernetes {
@@ -374,33 +403,6 @@ pipeline{
 //            }
 //          }
 //        }
-        stage("Engine UNIT: History Level Tests") {
-          matrix {
-            axes {
-              axis {
-                name 'HISTORY_LEVEL_PROFILE'
-                values 'cfghistoryactivity', 'cfghistoryaudit', 'cfghistorynone'
-              }
-            }
-            agent {
-              kubernetes {
-                yaml getMavenAgent()
-              }
-            }
-            steps {
-              container("maven") {
-                // Run maven
-                unstash "artifactStash"
-                configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
-                  sh """
-                  export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
-                  cd engine/ && mvn -s \$MAVEN_SETTINGS_XML verify -P${} -B
-                """
-                }
-              }
-            }
-          }
-        }
 //        stage("Engine UNIT: History Level Activity Tests") {
 //          agent {
 //            kubernetes {
