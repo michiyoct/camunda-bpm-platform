@@ -742,7 +742,7 @@ pipeline{
               configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
                 sh """
                   export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
-                  cd distro/run && mvn -s \$MAVEN_SETTINGS_XML test -Pintegration-test-camunda-run -B
+                  cd distro/run && mvn -s \$MAVEN_SETTINGS_XML clean install -Pintegration-test-camunda-run -B
                 """
               }
             }
@@ -761,7 +761,7 @@ pipeline{
               configFileProvider([configFile(fileId: 'maven-nexus-settings', variable: 'MAVEN_SETTINGS_XML')]) {
                 sh """
                   export MAVEN_OPTS="-Dmaven.repo.local=\$(pwd)/.m2"
-                  cd spring-boot-starter && mvn -s \$MAVEN_SETTINGS_XML test -Pintegration-test-spring-boot-starter -B
+                  cd spring-boot-starter && mvn -s \$MAVEN_SETTINGS_XML clean install -Pintegration-test-spring-boot-starter -B
                 """
               }
             }
